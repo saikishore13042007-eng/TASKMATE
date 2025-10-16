@@ -1,0 +1,210 @@
+
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, parseISO, startOfWeek, endOfWeek } from "date-fns";
+import { motion } from "framer-motion";
+
+export default function CalendarPage() {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        console.error("Failed to fetch user:", error);
+        // Handle error, e.g., redirect to login or show an error message
+        setUser(null); // Ensure user is null if fetching fails
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['tasks', user?.email], // Add user email to query key to refetch when user changes
+    queryFn: async () => {
+      const allTasks = await base44.entities.Task.list();
+      // Filter tasks: show only tasks assigned to user or created by user
+      return allTasks.filter(t => 
+        t.assigned_to === user?.email || 
+        (t.created_by === user?.email && !t.assigned_to)
+      );
+    },
+    enabled: !!user, // Query will only run if 'user' is not null
+    initialData: [],
+  });
+
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(currentDate);
+  const calendarStart = startOfWeek(monthStart);
+  const calendarEnd = endOfWeek(monthEnd);
+  const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+  const getTasksForDate = (date) => {
+    return tasks.filter(task => {
+      if (!task.due_date) return false;
+      return isSameDay(parseISO(task.due_date), date);
+    });
+  };
+
+  const selectedDateTasks = getTasksForDate(selectedDate);
+
+  const previousMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+  };
+
+  const nextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+  };
+
+  const priorityColors = {
+    low: "bg-blue-500",
+    medium: "bg-yellow-500",
+    high: "bg-orange-500",
+    urgent: "bg-red-500"
+  };
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Calendar View</h1>
+          <p className="text-slate-600">Visualize your tasks in calendar format</p>
+        </motion.div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+              <CardHeader className="border-b border-slate-100">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-2xl">
+                    {format(currentDate, 'MMMM yyyy')}
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" onClick={previousMonth}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setCurrentDate(new Date());
+                        setSelectedDate(new Date());
+                      }}
+                    >
+                      Today
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={nextMonth}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-7 gap-2 mb-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className="text-center text-sm font-medium text-slate-600 py-2">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {calendarDays.map((day, index) => {
+                    const dayTasks = getTasksForDate(day);
+                    const isCurrentMonth = isSameMonth(day, currentDate);
+                    const isSelected = isSameDay(day, selectedDate);
+                    const isToday = isSameDay(day, new Date());
+
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedDate(day)}
+                        className={`
+                          min-h-24 p-2 rounded-lg border transition-all
+                          ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}
+                          ${!isCurrentMonth && 'opacity-40'}
+                          ${isToday && !isSelected && 'border-blue-300 bg-blue-50/50'}
+                        `}
+                      >
+                        <div className={`
+                          text-sm font-medium mb-1
+                          ${isSelected ? 'text-blue-600' : 'text-slate-700'}
+                          ${isToday && 'font-bold'}
+                        `}>
+                          {format(day, 'd')}
+                        </div>
+                        <div className="space-y-1">
+                          {dayTasks.slice(0, 2).map((task, i) => (
+                            <div
+                              key={i}
+                              className={`h-1.5 rounded-full ${priorityColors[task.priority]}`}
+                            />
+                          ))}
+                          {dayTasks.length > 2 && (
+                            <div className="text-xs text-slate-500">
+                              +{dayTasks.length - 2}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div>
+            <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+              <CardHeader className="border-b border-slate-100">
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarIcon className="w-5 h-5 text-blue-500" />
+                  {format(selectedDate, 'MMMM d, yyyy')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                {selectedDateTasks.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <p>No tasks scheduled</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedDateTasks.map(task => (
+                      <div key={task.id} className="p-4 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all">
+                        <h4 className="font-medium text-slate-900 mb-2">{task.title}</h4>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="outline" className={`${priorityColors[task.priority].replace('bg-', 'border-')} ${priorityColors[task.priority].replace('bg-', 'text-')}`}>
+                            {task.priority}
+                          </Badge>
+                          <Badge variant="secondary" className="capitalize">
+                            {task.category}
+                          </Badge>
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-slate-600 mt-2 line-clamp-2">
+                            {task.description}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
