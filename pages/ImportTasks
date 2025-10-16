@@ -1,0 +1,215 @@
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Mail, Calendar, Upload, Loader2, CheckCircle2 } from "lucide-react";
+import { motion } from "framer-motion";
+
+export default function ImportTasks() {
+  const [user, setUser] = useState(null);
+  const [emailContent, setEmailContent] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importedCount, setImportedCount] = useState(0);
+  
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+    };
+    fetchUser();
+  }, []);
+
+  const importFromEmail = async () => {
+    if (!emailContent.trim()) {
+      alert("Please paste email content");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: `Extract all actionable tasks from this email content. For each task, provide:
+        - title (concise, action-oriented)
+        - description (additional context if available)
+        - priority (low/medium/high/urgent based on context)
+        - category (work/personal/health/learning/shopping/finance/other)
+        - estimated_duration (in minutes, reasonable estimate)
+        - due_date (if mentioned, otherwise set to 7 days from now in ISO format)
+        
+        Email content:
+        ${emailContent}
+        
+        Only extract genuine tasks/action items. Ignore greetings, signatures, etc.`,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            tasks: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  priority: { type: "string" },
+                  category: { type: "string" },
+                  estimated_duration: { type: "number" },
+                  due_date: { type: "string" }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (result.tasks && result.tasks.length > 0) {
+        await base44.entities.Task.bulkCreate(
+          result.tasks.map(task => ({
+            ...task,
+            status: "pending",
+            source: "email",
+            reminder_enabled: true,
+            assigned_to: user.email
+          }))
+        );
+        
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        setImportedCount(result.tasks.length);
+        setEmailContent("");
+        
+        setTimeout(() => setImportedCount(0), 5000);
+      } else {
+        alert("No actionable tasks found in the email content");
+      }
+    } catch (error) {
+      console.error("Error importing tasks:", error);
+      alert("Failed to import tasks. Please try again.");
+    }
+    setImporting(false);
+  };
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Import Tasks</h1>
+          <p className="text-slate-600">Extract tasks from your emails and calendar</p>
+        </motion.div>
+
+        {importedCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3"
+          >
+            <CheckCircle2 className="w-5 h-5 text-green-600" />
+            <p className="text-green-800">
+              Successfully imported {importedCount} task{importedCount !== 1 ? 's' : ''}!
+            </p>
+          </motion.div>
+        )}
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-blue-500" />
+                Import from Email
+              </CardTitle>
+              <CardDescription>
+                Paste email content to extract action items
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                <Textarea
+                  placeholder="Paste your email content here...&#10;&#10;Example:&#10;Hi team,&#10;&#10;Please complete the following by Friday:&#10;1. Review the Q4 report&#10;2. Submit expense reports&#10;3. Update project documentation&#10;&#10;Thanks!"
+                  value={emailContent}
+                  onChange={(e) => setEmailContent(e.target.value)}
+                  className="h-64"
+                />
+                <Button
+                  onClick={importFromEmail}
+                  disabled={importing}
+                  className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Extracting Tasks...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import Tasks
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-6">
+            <Card className="shadow-lg border-none bg-gradient-to-br from-purple-50 to-pink-50">
+              <CardHeader className="border-b border-purple-100">
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-purple-600" />
+                  How It Works
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="space-y-4 text-sm text-slate-700">
+                  <div className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center flex-shrink-0">
+                      <span className="text-purple-700 font-semibold text-xs">1</span>
+                    </div>
+                    <p>Copy content from your emails containing action items or tasks</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center flex-shrink-0">
+                      <span className="text-purple-700 font-semibold text-xs">2</span>
+                    </div>
+                    <p>Paste the content in the text area above</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center flex-shrink-0">
+                      <span className="text-purple-700 font-semibold text-xs">3</span>
+                    </div>
+                    <p>AI will automatically extract actionable tasks with priorities and due dates</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center flex-shrink-0">
+                      <span className="text-purple-700 font-semibold text-xs">4</span>
+                    </div>
+                    <p>Imported tasks will appear in your task manager</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+              <CardHeader className="border-b border-slate-100">
+                <CardTitle className="text-lg">💡 Pro Tips</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <ul className="space-y-2 text-sm text-slate-600 list-disc list-inside">
+                  <li>Include date references for better due date detection</li>
+                  <li>Use action verbs like "review", "submit", "complete"</li>
+                  <li>Mention priorities like "urgent" or "high priority"</li>
+                  <li>Works great with meeting notes and project emails</li>
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
