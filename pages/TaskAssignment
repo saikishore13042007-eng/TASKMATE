@@ -1,6 +1,301 @@
-// TaskAssignment.jsx
-// Placeholder for pages/TaskAssignment.jsx
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { Calendar as CalendarIcon, Send, Users } from "lucide-react";
+import { format } from "date-fns";
+import { motion } from "framer-motion";
+import { createPageUrl } from "@/utils";
 
 export default function TaskAssignment() {
-  return <div>TaskAssignment.jsx</div>;
+  const [user, setUser] = useState(null);
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    category: "work",
+    assigned_to: "",
+    due_date: "",
+    estimated_duration: 60,
+    source: "admin_assigned"
+  });
+
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      if (currentUser.role !== 'admin') {
+        window.location.href = createPageUrl("Dashboard");
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['all-users'],
+    queryFn: () => base44.entities.User.list(),
+    initialData: [],
+  });
+
+  const { data: allTasks = [] } = useQuery({
+    queryKey: ['all-tasks'],
+    queryFn: () => base44.entities.Task.list('-created_date'),
+    initialData: [],
+  });
+
+  const regularUsers = allUsers.filter(u => u.role !== 'admin');
+  const assignedTasks = allTasks.filter(t => t.source === 'admin_assigned');
+
+  const createTaskMutation = useMutation({
+    mutationFn: async (taskData) => {
+      const task = await base44.entities.Task.create({
+        ...taskData,
+        assigned_by: user.email
+      });
+      
+      // Send email notification to user
+      if (taskData.assigned_to) {
+        await base44.integrations.Core.SendEmail({
+          from_name: "TaskMate - Admin",
+          to: taskData.assigned_to,
+          subject: `New Task Assigned: ${taskData.title}`,
+          body: `
+            Hello,
+            
+            You have been assigned a new task:
+            
+            Title: ${taskData.title}
+            Priority: ${taskData.priority}
+            Due Date: ${format(new Date(taskData.due_date), 'PPP')}
+            
+            ${taskData.description ? `Description: ${taskData.description}` : ''}
+            
+            Please log in to TaskMate to view and manage your tasks.
+            
+            Best regards,
+            TaskMate Team
+          `
+        });
+      }
+      
+      return task;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-tasks'] });
+      setNewTask({
+        title: "",
+        description: "",
+        priority: "medium",
+        category: "work",
+        assigned_to: "",
+        due_date: "",
+        estimated_duration: 60,
+        source: "admin_assigned"
+      });
+    },
+  });
+
+  const handleAssignTask = () => {
+    if (!newTask.title || !newTask.assigned_to || !newTask.due_date) {
+      alert("Please fill in all required fields");
+      return;
+    }
+    createTaskMutation.mutate(newTask);
+  };
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Task Assignment</h1>
+          <p className="text-slate-600">Assign tasks to users and manage workload</p>
+        </motion.div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+              <CardHeader className="border-b border-slate-100">
+                <CardTitle>Create & Assign Task</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Task Title *</Label>
+                    <Input
+                      placeholder="Enter task title..."
+                      value={newTask.title}
+                      onChange={(e) => setNewTask({...newTask, title: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      placeholder="Add task details..."
+                      value={newTask.description}
+                      onChange={(e) => setNewTask({...newTask, description: e.target.value})}
+                      className="h-24"
+                    />
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Assign To *</Label>
+                      <Select
+                        value={newTask.assigned_to}
+                        onValueChange={(value) => setNewTask({...newTask, assigned_to: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select user" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {regularUsers.map(u => (
+                            <SelectItem key={u.email} value={u.email}>
+                              {u.full_name} ({u.email})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Priority</Label>
+                      <Select
+                        value={newTask.priority}
+                        onValueChange={(value) => setNewTask({...newTask, priority: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select
+                        value={newTask.category}
+                        onValueChange={(value) => setNewTask({...newTask, category: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="work">Work</SelectItem>
+                          <SelectItem value="personal">Personal</SelectItem>
+                          <SelectItem value="health">Health</SelectItem>
+                          <SelectItem value="learning">Learning</SelectItem>
+                          <SelectItem value="shopping">Shopping</SelectItem>
+                          <SelectItem value="finance">Finance</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Estimated Duration (minutes)</Label>
+                      <Input
+                        type="number"
+                        min="5"
+                        step="5"
+                        value={newTask.estimated_duration}
+                        onChange={(e) => setNewTask({...newTask, estimated_duration: parseInt(e.target.value)})}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Due Date *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newTask.due_date ? format(new Date(newTask.due_date), 'PPP') : 'Pick a date'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={newTask.due_date ? new Date(newTask.due_date) : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              const datetime = new Date(date);
+                              datetime.setHours(17, 0, 0);
+                              setNewTask({...newTask, due_date: datetime.toISOString()});
+                            }
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <Button
+                    onClick={handleAssignTask}
+                    disabled={createTaskMutation.isPending}
+                    className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 gap-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    {createTaskMutation.isPending ? 'Assigning...' : 'Assign Task'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div>
+            <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+              <CardHeader className="border-b border-slate-100">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-500" />
+                  Recently Assigned
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="space-y-3">
+                  {assignedTasks.slice(0, 5).map((task) => (
+                    <div key={task.id} className="p-3 bg-slate-50 rounded-lg">
+                      <p className="font-medium text-sm text-slate-900 mb-1">{task.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-slate-600">
+                        <Badge variant="outline" className="text-xs">
+                          {task.priority}
+                        </Badge>
+                        <span>→</span>
+                        <span>{allUsers.find(u => u.email === task.assigned_to)?.full_name}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {assignedTasks.length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-4">
+                      No tasks assigned yet
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
