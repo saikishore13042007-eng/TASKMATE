@@ -1,6 +1,90 @@
-// AIInsights.jsx
-// Placeholder for components/dashboard/AIInsights.jsx
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Brain, TrendingUp, Loader2 } from "lucide-react";
+import { base44 } from "@/api/base44Client";
+import { Badge } from "@/components/ui/badge";
 
-export default function AIInsights() {
-  return <div>AIInsights.jsx</div>;
+export default function AIInsights({ tasks, preferences }) {
+  const [insights, setInsights] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (tasks.length > 3) {
+      generateInsights();
+    }
+  }, [tasks.length]);
+
+  const generateInsights = async () => {
+    setLoading(true);
+    try {
+      const completedTasks = tasks.filter(t => t.status === 'completed').length;
+      const overdueTasks = tasks.filter(t => t.status === 'overdue').length;
+      const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt: `Based on this task data, provide 3 brief productivity insights and 1 actionable recommendation:
+        - Total tasks: ${tasks.length}
+        - Completed: ${completedTasks}
+        - Overdue: ${overdueTasks}
+        - Pending: ${pendingTasks}
+        - User's daily goal: ${preferences?.productivity_goal || 5} tasks
+        
+        Keep each insight to 1 sentence. Be encouraging and specific.`,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            insights: {
+              type: "array",
+              items: { type: "string" }
+            },
+            recommendation: { type: "string" }
+          }
+        }
+      });
+
+      setInsights(response);
+    } catch (error) {
+      console.error("Error generating insights:", error);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Card className="shadow-lg border-none bg-gradient-to-br from-purple-50 to-pink-50">
+      <CardHeader className="border-b border-purple-100 pb-4">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <Brain className="w-5 h-5 text-purple-600" />
+          AI Insights
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+          </div>
+        ) : insights ? (
+          <div className="space-y-4">
+            {insights.insights?.map((insight, index) => (
+              <div key={index} className="flex gap-3 items-start">
+                <TrendingUp className="w-4 h-4 text-purple-600 mt-1 flex-shrink-0" />
+                <p className="text-sm text-slate-700">{insight}</p>
+              </div>
+            ))}
+            {insights.recommendation && (
+              <div className="mt-4 p-3 bg-white rounded-lg border border-purple-200">
+                <Badge className="mb-2 bg-purple-100 text-purple-800">
+                  Recommendation
+                </Badge>
+                <p className="text-sm text-slate-700">{insights.recommendation}</p>
+              </div>
+            )}
+          </div>
+        ) : tasks.length <= 3 ? (
+          <p className="text-sm text-slate-500 text-center py-4">
+            Complete more tasks to unlock AI insights
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
