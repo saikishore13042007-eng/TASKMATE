@@ -1,6 +1,141 @@
-// Dashboard.jsx
-// Placeholder for pages/Dashboard.jsx
+
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { 
+  CheckCircle2, Clock, AlertTriangle, TrendingUp, 
+  Plus, Calendar, Target, Zap, Brain
+} from "lucide-react";
+import { format, isToday, isTomorrow, isPast, parseISO } from "date-fns";
+import { motion } from "framer-motion";
+
+import StatsCard from "../components/dashboard/StatsCard";
+import UpcomingTasks from "../components/dashboard/UpcomingTasks";
+import ProductivityChart from "../components/dashboard/ProductivityChart";
+import QuickActions from "../components/dashboard/QuickActions";
+import AIInsights from "../components/dashboard/AIInsights";
 
 export default function Dashboard() {
-  return <div>Dashboard.jsx</div>;
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      // Redirect admins to admin dashboard
+      if (currentUser.role === 'admin') {
+        window.location.href = createPageUrl("AdminDashboard");
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ['tasks'],
+    queryFn: async () => {
+      const allTasks = await base44.entities.Task.list('-created_date');
+      // Filter tasks: show only tasks assigned to user or created by user
+      return allTasks.filter(t => 
+        t.assigned_to === user?.email || 
+        (t.created_by === user?.email && !t.assigned_to)
+      );
+    },
+    enabled: !!user, // Only fetch tasks once user data is available
+    initialData: [],
+  });
+
+  const { data: preferences = [] } = useQuery({
+    queryKey: ['preferences'],
+    queryFn: () => base44.entities.UserPreferences.filter({ created_by: user?.email }),
+    enabled: !!user,
+    initialData: [],
+  });
+
+  const stats = {
+    total: tasks.length,
+    completed: tasks.filter(t => t.status === 'completed').length,
+    pending: tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
+    overdue: tasks.filter(t => t.status === 'overdue' || (t.due_date && isPast(parseISO(t.due_date)) && t.status !== 'completed')).length,
+  };
+
+  const todayTasks = tasks.filter(t => t.due_date && isToday(parseISO(t.due_date)));
+  const upcomingTasks = tasks
+    .filter(t => t.status !== 'completed' && t.due_date)
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+    .slice(0, 5);
+
+  const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
+        >
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
+              Welcome back, {user?.full_name?.split(' ')[0] || 'there'}! 👋
+            </h1>
+            <p className="text-slate-600">Here's what's happening with your tasks today</p>
+          </div>
+          <Link to={createPageUrl("TaskManager")}>
+            <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 shadow-lg">
+              <Plus className="w-5 h-5 mr-2" />
+              New Task
+            </Button>
+          </Link>
+        </motion.div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatsCard
+            title="Total Tasks"
+            value={stats.total}
+            icon={Target}
+            color="from-blue-500 to-cyan-500"
+            delay={0.1}
+          />
+          <StatsCard
+            title="Completed"
+            value={stats.completed}
+            icon={CheckCircle2}
+            color="from-green-500 to-emerald-500"
+            trend={`${completionRate}% completion rate`}
+            delay={0.2}
+          />
+          <StatsCard
+            title="In Progress"
+            value={stats.pending}
+            icon={Clock}
+            color="from-orange-500 to-amber-500"
+            delay={0.3}
+          />
+          <StatsCard
+            title="Overdue"
+            value={stats.overdue}
+            icon={AlertTriangle}
+            color="from-red-500 to-pink-500"
+            delay={0.4}
+          />
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-6 mb-8">
+          <div className="lg:col-span-2">
+            <UpcomingTasks tasks={upcomingTasks} isLoading={isLoading} />
+          </div>
+          <div className="space-y-6">
+            <QuickActions todayTasksCount={todayTasks.length} />
+            <AIInsights tasks={tasks} preferences={preferences[0]} />
+          </div>
+        </div>
+
+        <ProductivityChart tasks={tasks} />
+      </div>
+    </div>
+  );
 }
