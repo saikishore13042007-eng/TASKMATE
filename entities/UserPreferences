@@ -1,6 +1,66 @@
-// UserPreferences.js
-// Placeholder for entities/UserPreferences.js
-
-export default function UserPreferences() {
-  return <div>UserPreferences.js</div>;
+{
+  "name": "UserPreferences",
+  "type": "object",
+  "properties": {
+    "default_reminder_intervals": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "default": [
+        60,
+        30,
+        15
+      ],
+      "description": "Default reminder intervals in minutes"
+    },
+    "email_notifications": {
+      "type": "boolean",
+      "default": true
+    },
+    "daily_digest_time": {
+      "type": "string",
+      "default": "08:00",
+      "description": "Time for daily task digest email"
+    },
+    "work_hours_start": {
+      "type": "string",
+      "default": "09:00"
+    },
+    "work_hours_end": {
+      "type": "string",
+      "default": "17:00"
+    },
+    "theme": {
+      "type": "string",
+      "enum": [
+        "light",
+        "dark",
+        "auto"
+      ],
+      "default": "light"
+    },
+    "notification_sound": {
+      "type": "string",
+      "enum": [
+        "classic",
+        "digital",
+        "gentle",
+        "urgent",
+        "none"
+      ],
+      "default": "classic"
+    },
+    "auto_schedule": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable AI-powered automatic scheduling"
+    },
+    "productivity_goal": {
+      "type": "number",
+      "default": 5,
+      "description": "Daily task completion goal"
+    }
+  },
+  "required": []
 }
