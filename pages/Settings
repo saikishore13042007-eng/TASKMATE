@@ -1,6 +1,262 @@
-// Settings.jsx
-// Placeholder for pages/Settings.jsx
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Bell, Clock, Palette, Target, Save, Check } from "lucide-react";
+import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
 
 export default function Settings() {
-  return <div>Settings.jsx</div>;
+  const [user, setUser] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+    };
+    fetchUser();
+  }, []);
+
+  const { data: preferences = [] } = useQuery({
+    queryKey: ['preferences'],
+    queryFn: () => base44.entities.UserPreferences.filter({ created_by: user?.email }),
+    enabled: !!user,
+    initialData: [],
+  });
+
+  const [settings, setSettings] = useState(preferences[0] || {
+    default_reminder_intervals: [60, 30, 15],
+    email_notifications: true,
+    daily_digest_time: "08:00",
+    work_hours_start: "09:00",
+    work_hours_end: "17:00",
+    theme: "light",
+    notification_sound: "classic",
+    auto_schedule: true,
+    productivity_goal: 5
+  });
+
+  useEffect(() => {
+    if (preferences[0]) {
+      setSettings(preferences[0]);
+    }
+  }, [preferences]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data) => {
+      if (preferences[0]) {
+        return base44.entities.UserPreferences.update(preferences[0].id, data);
+      } else {
+        return base44.entities.UserPreferences.create(data);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['preferences'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  const handleSave = () => {
+    saveMutation.mutate(settings);
+  };
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Settings</h1>
+          <p className="text-slate-600">Customize your TaskMate experience</p>
+        </motion.div>
+
+        <div className="space-y-6">
+          <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="w-5 h-5 text-blue-500" />
+                Notifications
+              </CardTitle>
+              <CardDescription>Manage how you receive task reminders</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base">Email Notifications</Label>
+                  <p className="text-sm text-slate-500">Receive task reminders via email</p>
+                </div>
+                <Switch
+                  checked={settings.email_notifications}
+                  onCheckedChange={(checked) => setSettings({...settings, email_notifications: checked})}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Notification Sound</Label>
+                <Select
+                  value={settings.notification_sound}
+                  onValueChange={(value) => setSettings({...settings, notification_sound: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="classic">Classic</SelectItem>
+                    <SelectItem value="digital">Digital</SelectItem>
+                    <SelectItem value="gentle">Gentle</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Daily Digest Time</Label>
+                <Input
+                  type="time"
+                  value={settings.daily_digest_time}
+                  onChange={(e) => setSettings({...settings, daily_digest_time: e.target.value})}
+                />
+                <p className="text-xs text-slate-500">Receive a daily summary of your tasks</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Default Reminder Intervals (minutes before due)</Label>
+                <div className="flex gap-2">
+                  {settings.default_reminder_intervals?.map((interval, index) => (
+                    <Badge key={index} variant="secondary">
+                      {interval}m
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500">60, 30, and 15 minutes before task is due</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-500" />
+                Work Hours
+              </CardTitle>
+              <CardDescription>Set your preferred working hours for AI scheduling</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Start Time</Label>
+                  <Input
+                    type="time"
+                    value={settings.work_hours_start}
+                    onChange={(e) => setSettings({...settings, work_hours_start: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>End Time</Label>
+                  <Input
+                    type="time"
+                    value={settings.work_hours_end}
+                    onChange={(e) => setSettings({...settings, work_hours_end: e.target.value})}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-blue-500" />
+                Productivity
+              </CardTitle>
+              <CardDescription>Set your daily productivity goals</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base">AI Auto-Schedule</Label>
+                  <p className="text-sm text-slate-500">Let AI suggest optimal task times</p>
+                </div>
+                <Switch
+                  checked={settings.auto_schedule}
+                  onCheckedChange={(checked) => setSettings({...settings, auto_schedule: checked})}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Daily Task Goal</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={settings.productivity_goal}
+                  onChange={(e) => setSettings({...settings, productivity_goal: parseInt(e.target.value)})}
+                />
+                <p className="text-xs text-slate-500">Number of tasks you aim to complete each day</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-blue-500" />
+                Appearance
+              </CardTitle>
+              <CardDescription>Customize the look and feel</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="space-y-2">
+                <Label>Theme</Label>
+                <Select
+                  value={settings.theme}
+                  onValueChange={(value) => setSettings({...settings, theme: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                    <SelectItem value="auto">Auto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button 
+              onClick={handleSave}
+              disabled={saveMutation.isPending}
+              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 shadow-lg gap-2"
+            >
+              {saved ? (
+                <>
+                  <Check className="w-5 h-5" />
+                  Saved!
+                </>
+              ) : (
+                <>
+                  <Save className="w-5 h-5" />
+                  Save Settings
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
