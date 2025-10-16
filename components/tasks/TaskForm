@@ -1,6 +1,325 @@
-// TaskForm.jsx
-// Placeholder for components/tasks/TaskForm.jsx
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon, Clock, Plus, X, Sparkles, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { base44 } from "@/api/base44Client";
 
-export default function TaskForm() {
-  return <div>TaskForm.jsx</div>;
+export default function TaskForm({ task, onSubmit, onCancel, preferences }) {
+  const [currentTask, setCurrentTask] = useState(task || {
+    title: "",
+    description: "",
+    status: "pending",
+    priority: "medium",
+    category: "personal",
+    due_date: "",
+    estimated_duration: 30,
+    reminder_intervals: preferences?.default_reminder_intervals || [60, 30, 15],
+    reminder_enabled: true,
+    tags: [],
+    subtasks: []
+  });
+
+  const [newTag, setNewTag] = useState("");
+  const [newSubtask, setNewSubtask] = useState("");
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(currentTask);
+  };
+
+  const addTag = () => {
+    if (newTag.trim()) {
+      setCurrentTask({
+        ...currentTask,
+        tags: [...(currentTask.tags || []), newTag.trim()]
+      });
+      setNewTag("");
+    }
+  };
+
+  const removeTag = (index) => {
+    setCurrentTask({
+      ...currentTask,
+      tags: currentTask.tags.filter((_, i) => i !== index)
+    });
+  };
+
+  const addSubtask = () => {
+    if (newSubtask.trim()) {
+      setCurrentTask({
+        ...currentTask,
+        subtasks: [...(currentTask.subtasks || []), { title: newSubtask.trim(), completed: false }]
+      });
+      setNewSubtask("");
+    }
+  };
+
+  const removeSubtask = (index) => {
+    setCurrentTask({
+      ...currentTask,
+      subtasks: currentTask.subtasks.filter((_, i) => i !== index)
+    });
+  };
+
+  const suggestSchedule = async () => {
+    if (!currentTask.title || !currentTask.due_date) {
+      alert("Please enter a task title and due date first");
+      return;
+    }
+
+    setLoadingSuggestion(true);
+    try {
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt: `Suggest an optimal scheduled time for this task:
+        Task: ${currentTask.title}
+        Due Date: ${currentTask.due_date}
+        Estimated Duration: ${currentTask.estimated_duration} minutes
+        Priority: ${currentTask.priority}
+        Work Hours: ${preferences?.work_hours_start || '09:00'} - ${preferences?.work_hours_end || '17:00'}
+        
+        Provide a specific date and time that would be optimal to start this task, considering it needs to be done before the due date.
+        Return only the datetime in ISO format.`,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            scheduled_time: { type: "string" }
+          }
+        }
+      });
+
+      if (response.scheduled_time) {
+        setCurrentTask({
+          ...currentTask,
+          scheduled_time: response.scheduled_time
+        });
+      }
+    } catch (error) {
+      console.error("Error getting schedule suggestion:", error);
+    }
+    setLoadingSuggestion(false);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+    >
+      <Card className="mb-8 shadow-lg border-none bg-white/80 backdrop-blur-sm">
+        <CardHeader className="border-b border-slate-100">
+          <CardTitle className="text-xl">
+            {task ? 'Edit Task' : 'Create New Task'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="title">Task Title *</Label>
+              <Input
+                id="title"
+                placeholder="What needs to be done?"
+                value={currentTask.title}
+                onChange={(e) => setCurrentTask({...currentTask, title: e.target.value})}
+                required
+                className="text-lg"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Add details about this task..."
+                value={currentTask.description}
+                onChange={(e) => setCurrentTask({...currentTask, description: e.target.value})}
+                className="h-24"
+              />
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select
+                  value={currentTask.priority}
+                  onValueChange={(value) => setCurrentTask({...currentTask, priority: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low Priority</SelectItem>
+                    <SelectItem value="medium">Medium Priority</SelectItem>
+                    <SelectItem value="high">High Priority</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select
+                  value={currentTask.category}
+                  onValueChange={(value) => setCurrentTask({...currentTask, category: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="work">Work</SelectItem>
+                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="health">Health</SelectItem>
+                    <SelectItem value="learning">Learning</SelectItem>
+                    <SelectItem value="shopping">Shopping</SelectItem>
+                    <SelectItem value="finance">Finance</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Due Date *</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start text-left">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {currentTask.due_date ? format(new Date(currentTask.due_date), 'PPP p') : 'Pick a date'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={currentTask.due_date ? new Date(currentTask.due_date) : undefined}
+                      onSelect={(date) => {
+                        if (date) {
+                          const datetime = new Date(date);
+                          datetime.setHours(17, 0, 0);
+                          setCurrentTask({...currentTask, due_date: datetime.toISOString()});
+                        }
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estimated Duration (minutes)</Label>
+                <Input
+                  type="number"
+                  min="5"
+                  step="5"
+                  value={currentTask.estimated_duration}
+                  onChange={(e) => setCurrentTask({...currentTask, estimated_duration: parseInt(e.target.value)})}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>AI Scheduled Time</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={suggestSchedule}
+                  disabled={loadingSuggestion}
+                  className="gap-2"
+                >
+                  {loadingSuggestion ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  Suggest Time
+                </Button>
+              </div>
+              {currentTask.scheduled_time && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <p className="text-sm text-purple-900">
+                    Suggested: {format(new Date(currentTask.scheduled_time), 'PPP p')}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add tag..."
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                />
+                <Button type="button" onClick={addTag} size="icon">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {currentTask.tags?.map((tag, index) => (
+                  <Badge key={index} variant="secondary" className="gap-1">
+                    {tag}
+                    <X
+                      className="w-3 h-3 cursor-pointer"
+                      onClick={() => removeTag(index)}
+                    />
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subtasks</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add subtask..."
+                  value={newSubtask}
+                  onChange={(e) => setNewSubtask(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSubtask())}
+                />
+                <Button type="button" onClick={addSubtask} size="icon">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="space-y-2 mt-2">
+                {currentTask.subtasks?.map((subtask, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                    <span className="text-sm">{subtask.title}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeSubtask(index)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600">
+                {task ? 'Update Task' : 'Create Task'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
