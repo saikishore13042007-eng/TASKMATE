@@ -1,6 +1,142 @@
-// UserManagement.jsx
-// Placeholder for pages/UserManagement.jsx
+
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Users, Search, Mail, Calendar, Shield } from "lucide-react";
+import { motion } from "framer-motion";
+import { format } from "date-fns";
+import { createPageUrl } from "@/utils"; // Added import for createPageUrl
 
 export default function UserManagement() {
-  return <div>UserManagement.jsx</div>;
+  const [user, setUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      if (currentUser.role !== 'admin') {
+        window.location.href = createPageUrl("Dashboard");
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['all-users'],
+    queryFn: () => base44.entities.User.list('-created_date'),
+    initialData: [],
+  });
+
+  const { data: allTasks = [] } = useQuery({
+    queryKey: ['all-tasks'],
+    queryFn: () => base44.entities.Task.list(),
+    initialData: [],
+  });
+
+  const filteredUsers = allUsers.filter(u => 
+    u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getUserTaskCount = (userEmail) => {
+    return allTasks.filter(t => t.assigned_to === userEmail).length;
+  };
+
+  const getUserCompletedCount = (userEmail) => {
+    return allTasks.filter(t => t.assigned_to === userEmail && t.status === 'completed').length;
+  };
+
+  return (
+    <div className="p-4 md:p-8 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">User Management</h1>
+          <p className="text-slate-600">View and manage all system users</p>
+        </motion.div>
+
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <Input
+              placeholder="Search users by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 bg-white/80 backdrop-blur-sm border-slate-200"
+            />
+          </div>
+        </div>
+
+        <Card className="shadow-lg border-none bg-white/80 backdrop-blur-sm">
+          <CardHeader className="border-b border-slate-100">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-500" />
+              All Users ({filteredUsers.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              {filteredUsers.map((u, index) => (
+                <motion.div
+                  key={u.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 ${u.role === 'admin' ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-gradient-to-br from-blue-500 to-cyan-500'} rounded-full flex items-center justify-center`}>
+                      <span className="text-white font-semibold">
+                        {u.full_name?.[0]?.toUpperCase() || 'U'}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900">{u.full_name}</p>
+                        {u.role === 'admin' && (
+                          <Badge className="bg-purple-100 text-purple-800">
+                            <Shield className="w-3 h-3 mr-1" />
+                            Admin
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-slate-600">
+                        <div className="flex items-center gap-1">
+                          <Mail className="w-4 h-4" />
+                          {u.email}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          Joined {format(new Date(u.created_date), 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-slate-900">
+                      {getUserCompletedCount(u.email)}/{getUserTaskCount(u.email)}
+                    </p>
+                    <p className="text-sm text-slate-500">Tasks Completed</p>
+                  </div>
+                </motion.div>
+              ))}
+              {filteredUsers.length === 0 && (
+                <div className="text-center py-12 text-slate-500">
+                  <Users className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                  <p>No users found</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }
